@@ -93,6 +93,8 @@ def one_hot_encoding(labels):
 
 
 
+def shorten_notes(notes, length = 300):
+    return [' '.join(n.split(" ")[:300]) for n in notes]
 
 
 
@@ -116,8 +118,8 @@ def load_data_and_labels(positive_data_file, negative_data_file):
     negative_labels = [[1, 0] for _ in negative_examples]
     y = np.concatenate([positive_labels, negative_labels], 0)
     return [x_text, y]
-def generate_data_and_label(notes, labels):
-    return [notes, labels]
+def generate_data_and_label(notes, one_hot_labels):
+    return [notes, one_hot_labels]
 
 
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
@@ -138,6 +140,67 @@ def batch_iter(data, batch_size, num_epochs, shuffle=True):
             start_index = batch_num * batch_size
             end_index = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start_index:end_index]
+
+
+
+def load_embedding_vectors_word2vec(vocabulary, filename, binary):
+    # load embedding_vectors from the word2vec
+    encoding = 'utf-8'
+    with open(filename, "rb") as f:
+        header = f.readline()
+        vocab_size, vector_size = map(int, header.split())
+        # initial matrix with random uniform
+        embedding_vectors = np.random.uniform(-0.25, 0.25, (len(vocabulary), vector_size))
+        if binary:
+            binary_len = np.dtype('float32').itemsize * vector_size
+            for line_no in range(vocab_size):
+                word = []
+                while True:
+                    ch = f.read(1)
+                    if ch == b' ':
+                        break
+                    if ch == b'':
+                        raise EOFError("unexpected end of input; is count incorrect or file otherwise damaged?")
+                    if ch != b'\n':
+                        word.append(ch)
+                word = str(b''.join(word), encoding=encoding, errors='strict')
+                idx = vocabulary.get(word)
+                if idx != 0:
+                    embedding_vectors[idx] = np.fromstring(f.read(binary_len), dtype='float32')
+                else:
+                    f.seek(binary_len, 1)
+        else:
+            for line_no in range(vocab_size):
+                line = f.readline()
+                if line == b'':
+                    raise EOFError("unexpected end of input; is count incorrect or file otherwise damaged?")
+                parts = str(line.rstrip(), encoding=encoding, errors='strict').split(" ")
+                if len(parts) != vector_size + 1:
+                    raise ValueError("invalid vector on line %s (is this really the text format?)" % (line_no))
+                word, vector = parts[0], list(map('float32', parts[1:]))
+                idx = vocabulary.get(word)
+                if idx != 0:
+                    embedding_vectors[idx] = vector
+        f.close()
+        return embedding_vectors
+
+
+
+
+def load_embedding_vectors_glove(vocabulary, filename, vector_size):
+    # load embedding_vectors from the glove
+    # initial matrix with random uniform
+    embedding_vectors = np.random.uniform(-0.25, 0.25, (len(vocabulary), vector_size))
+    f = open(filename)
+    for line in f:
+        values = line.split()
+        word = values[0]
+        vector = np.asarray(values[1:], dtype="float32")
+        idx = vocabulary.get(word)
+        if idx != 0:
+            embedding_vectors[idx] = vector
+    f.close()
+    return embedding_vectors
 if  __name__ == "__main__":
     labels =load_labels()
     notes = load_notes()
