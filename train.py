@@ -25,9 +25,9 @@ tf.flags.DEFINE_boolean("shorten_notes", False, "shorten notes length for memory
 
 # Model Hyperparameters
 tf.flags.DEFINE_boolean("enable_word_embeddings", True, "Enable/disable the word embedding (default: True)")
-tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embedding (default: 128)")
+tf.flags.DEFINE_integer("embedding_dim", 300, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
-tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
+tf.flags.DEFINE_integer("num_filters", 300, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
 tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularization lambda (default: 0.0)")
 
@@ -50,6 +50,13 @@ for attr, value in sorted(FLAGS.__flags.items()):
     print("{}={}".format(attr.upper(), value))
 print("")
 
+# enable word_embedding
+
+if FLAGS.enable_word_embeddings:
+    embedding_name = 'word2vec'
+    embedding_dimension = 300
+else:
+    embedding_dimension = FLAGS.embedding_dim
 
 # Data Preparation
 # ==================================================
@@ -103,7 +110,7 @@ with tf.Graph().as_default():
             sequence_length=x_train.shape[1],
             num_classes=y_train.shape[1],
             vocab_size=len(vocab_processor.vocabulary_),
-            embedding_size=FLAGS.embedding_dim,
+            embedding_size=embedding_dimension,
             filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
             num_filters=FLAGS.num_filters,
             l2_reg_lambda=FLAGS.l2_reg_lambda)
@@ -155,6 +162,17 @@ with tf.Graph().as_default():
 
         # Initialize all variables
         sess.run(tf.global_variables_initializer())
+        if FLAGS.enable_word_embeddings:
+            vocabulary = vocab_processor.vocabulary_
+            initW = None
+            if embedding_name == 'word2vec':
+                # load embedding vectors from the word2vec
+                print("Load word2vec file {}".format('GoogleNews-vectors-negative300.bin'))
+                initW = data_helpers.load_embedding_vectors_word2vec(vocabulary,
+                                                                     'GoogleNews-vectors-negative300.bin',
+                                                                     True)
+                print("word2vec file has been loaded")
+            sess.run(cnn.W.assign(initW))
 
         def train_step(x_batch, y_batch):
             """
@@ -176,9 +194,14 @@ with tf.Graph().as_default():
             """
             Evaluates model on a dev set
             """
+            # only evaluate dev set on a batch
+            data_size = len(x_batch)
+            shuffle_indices = np.random.permutation(np.arange(data_size))
+            x_shuffle = (x_batch[shuffle_indices])[:FLAGS.batch_size]
+            y_shuffle = (y_batch[shuffle_indices])[:FLAGS.batch_size]
             feed_dict = {
-              cnn.input_x: x_batch,
-              cnn.input_y: y_batch,
+              cnn.input_x: x_shuffle,
+              cnn.input_y: y_shuffle,
               cnn.dropout_keep_prob: 1.0
             }
             step, summaries, loss, accuracy = sess.run(
